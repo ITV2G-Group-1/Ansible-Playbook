@@ -8,6 +8,7 @@
 #include <json-c/json.h>
 #include <mysql/mysql.h>
 
+#define is_hex_char(char) ((char >= '0' && char <= '9') || (char >= 'a' && char <= 'f') || (char >= 'A' && char <= 'F'))
 #define ensure_db_con() (con ? 0 : connect_to_database())
 #define json_get_ex(datapoint, var, result) (json_object_object_get_ex(datapoint, var, result))
 #define json_get_id(array, i) (json_object_array_get_idx(array, i))
@@ -252,6 +253,10 @@ static int connect_to_database() {
 
 static int get_uuid_id(char uuid[20]) {
 	int id;
+
+    for (int i = 0; i < 20; i++) {
+        if (!is_hex_char(uuid[i])) return 0;
+    }
 
     ensure_db_con(); // Automatically exits if error occurs
 

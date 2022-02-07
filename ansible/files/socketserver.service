@@ -1,0 +1,15 @@
+[Unit]
+Description=This service runs the service that collects data from the pies
+After=network.target
+
+[Install]
+WantedBy=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/bin/pisocketserver
+Restart=always
+RestartSec=5
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=%n
