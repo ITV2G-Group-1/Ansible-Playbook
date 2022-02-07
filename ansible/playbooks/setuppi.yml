@@ -1,0 +1,156 @@
+---
+- hosts: all
+  gather_facts: true
+  become: true
+  vars:
+    SQLROOTPASSWORD: "rootKanto!1"
+    MYSQLUSERPW: "userKanto!1"
+    USR: "dany"
+  tasks:
+    - name: install MariaDB, (python)driver, json-c and c mysqllib
+      apt:
+        name:
+          - mariadb-server
+          - mariadb-client
+          - python3-mysqldb
+          - python3-pymysql
+          - libjson-c-dev
+          - default-libmysqlclient-dev
+        state: present
+        
+    - name: add repo js
+      shell: https://deb.nodesource.com/setup_17.x | sudo -E bash
+      #state: present
+
+    - name: nodejs & npm
+      apt:
+        name:
+          - nodejs
+          - npm
+        state: present
+        
+    - name: install node-red
+      community.general.npm:
+        name: node-red
+        global: yes
+        unsafe_perm: yes
+        state: present
+        
+    - name: check if nodered.service exists
+      stat: 
+        path: /lib/systemd/system/nodered.service
+      register: nodered_service
+  
+    - name: Download nodered.service
+      become: yes
+      get_url:
+        owner: root
+        mode: '644'
+        force: no
+        url: "https://raw.githubusercontent.com/node-red/linux-installers/master/resources/nodered.service"
+        dest: "/lib/systemd/system/nodered.service"
+      when: nodered_service.stat.exists == False
+      
+    - name: Configure user in nodered.service
+      become: yes
+      block:
+        - name: user
+          lineinfile:
+            path: /lib/systemd/system/nodered.service
+            regexp: 'User='
+            line: "User={{ansible_env.USER}}"
+    
+        - name: group
+          lineinfile:
+            path: /lib/systemd/system/nodered.service
+            regexp: 'Group='
+            line: "Group={{ansible_env.USER}}"
+    
+        - name: home
+          lineinfile:
+            path: /lib/systemd/system/nodered.service
+            regexp: 'WorkingDirectory='
+            line: "WorkingDirectory={{ansible_env.HOME}}"
+    
+    - name: Reload systemd
+      become: yes
+      systemd:
+        daemon_reload: yes
+        
+    - name: Install Node-red dash
+      community.general.npm:
+        name: node-red-dashboard
+        global: yes
+        unsafe_perm: yes
+        state: present
+        
+    - name: Install node-red mysql connection
+      community.general.npm:
+        name: node-red-node-mysql
+        global: yes
+        unsafe_perm: yes
+        state: present
+        
+#add movement of node-red files here
+      
+    - name: Enable nodered.service
+      ansible.builtin.systemd:
+        name: nodered.service
+        state: restarted
+        enabled: yes
+
+    - name: test mysql_secure_installation
+      mysql_secure_installation:
+        login_password: ''
+        new_password: "{{ SQLROOTPASSWORD }}"
+        user: root
+        login_host: localhost
+        hosts: ['localhost', '127.0.0.1', '::1']
+        change_root_password: true
+        remove_anonymous_user: true
+        disallow_root_login_remotely: true
+        remove_test_db: true
+      register: mysql_secure
+
+    - name: MariaDB restart and enable
+      ansible.builtin.systemd:
+        name: mariadb.service
+        state: restarted
+        enabled: yes
+        
+    - name: create temp dir
+      file:
+        path: /tmp/ansible/
+        state: directory
+        
+    - name: move sql file to server
+      ansible.builtin.copy:
+        src: /home/dany/ansible/files/db.sql
+        dest: /tmp/ansible/db.sql
+        
+    - name: Create and populate database
+      mysql_db:
+        login_user: root
+        login_password: "{{ SQLROOTPASSWORD }}"
+        state: import
+        name: all
+        target: /tmp/ansible/db.sql
+
+    - name: Create db user groep1user
+      mysql_user:
+        login_user: root
+        login_password: "{{ SQLROOTPASSWORD }}"
+        name: groep1user
+        password: "{{ MYSQLUSERPW }}"
+        priv: 'mydb.*:ALL'
+        state: present
+        
+    - name: move C server
+      ansible.builtin.copy:
+        src: /home/dany/ansible/files/pi_socketserver.c
+        dest: /home/{{ USR }}/pi_socketserver.c
+        
+    - name: compile C server
+      ansible.builtin.shell: echo"gcc /home/{{ USR }}/pi_sockerserver.c -std=c99 -lmysqlclient -ljson-c -o /home/{{ USR }}/server"
+      
+...
